@@ -28,12 +28,12 @@ test("expired login failures are removed", () => {
   assert.equal(limiter.canAttempt("198.51.100.10", 1_000), true);
 });
 
-test("proxy client headers are trusted only from loopback", () => {
+test("proxy client headers are trusted only when explicitly enabled", () => {
   assert.equal(
     loginClientKey({
       socket: { remoteAddress: "127.0.0.1" },
       headers: { "x-real-ip": "198.51.100.20" }
-    }),
+    }, { trustProxy: true }),
     "198.51.100.20"
   );
   assert.equal(
@@ -45,9 +45,9 @@ test("proxy client headers are trusted only from loopback", () => {
   );
   assert.equal(
     loginClientKey({
-      socket: { remoteAddress: "::1" },
+      socket: { remoteAddress: "172.18.0.1" },
       headers: { "x-forwarded-for": "192.0.2.1, 198.51.100.21" }
-    }),
+    }, { trustProxy: true }),
     "198.51.100.21"
   );
 });

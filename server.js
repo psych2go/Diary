@@ -29,6 +29,7 @@ const host = process.env.HOST || (production ? "0.0.0.0" : "127.0.0.1");
 const sessionSecret =
   process.env.DIARY_SESSION_SECRET || (production ? "" : "local-development-session-secret");
 const secureCookie = process.env.DIARY_SECURE_COOKIE !== "false" && production;
+const trustProxy = process.env.DIARY_TRUST_PROXY === "true";
 const androidFingerprints = parseAndroidFingerprints(
   process.env.ANDROID_SHA256_FINGERPRINTS
 );
@@ -149,7 +150,7 @@ async function handleApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/login") {
-    const clientKey = loginClientKey(request);
+    const clientKey = loginClientKey(request, { trustProxy });
     if (!loginLimiter.canAttempt(clientKey)) {
       response.setHeader("Retry-After", "600");
       return sendJson(response, 429, { error: "尝试次数过多，请稍后再试" });

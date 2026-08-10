@@ -106,9 +106,14 @@ DIARY_PASSWORD_HASH=generated-scrypt-hash
 DIARY_SESSION_SECRET=long-random-session-secret
 DIARY_HOST_DATA_DIR=/srv/my-diary/data
 DIARY_SECURE_COOKIE=true
+DIARY_TRUST_PROXY=true
 ```
 
 Store `.env` with mode `0600` and never commit it.
+
+Only enable `DIARY_TRUST_PROXY` when the application is behind a trusted local reverse proxy that
+overwrites `X-Real-IP` or `X-Forwarded-For`. The included Compose and OpenResty templates satisfy
+that requirement.
 
 ### 2. Prepare the data directory
 

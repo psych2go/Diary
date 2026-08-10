@@ -12,14 +12,9 @@ function normalizeAddress(value) {
   return net.isIP(address) ? address : "";
 }
 
-function isLoopback(address) {
-  const normalized = normalizeAddress(address);
-  return normalized === "127.0.0.1" || normalized === "::1";
-}
-
-export function loginClientKey(request) {
+export function loginClientKey(request, { trustProxy = false } = {}) {
   const peerAddress = normalizeAddress(request.socket?.remoteAddress) || "unknown";
-  if (!isLoopback(peerAddress)) {
+  if (!trustProxy) {
     return peerAddress;
   }
 
