@@ -1,0 +1,81 @@
+services:
+  diary:
+    build: .
+    restart: unless-stopped
+    user: "${DIARY_UID:-1000}:${DIARY_GID:-1000}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 160m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    environment:
+      DIARY_PASSWORD_HASH: ${DIARY_PASSWORD_HASH:?Set DIARY_PASSWORD_HASH in .env}
+      DIARY_SESSION_SECRET: ${DIARY_SESSION_SECRET:?Set DIARY_SESSION_SECRET in .env}
+      DIARY_SECURE_COOKIE: ${DIARY_SECURE_COOKIE:-true}
+      ANDROID_SHA256_FINGERPRINTS: ${ANDROID_SHA256_FINGERPRINTS:-}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${DIARY_PORT:-3000}:3000"
+    volumes:
+      - type: bind
+        source: ${DIARY_HOST_DATA_DIR:?Set DIARY_HOST_DATA_DIR in .env}
+        target: /data
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+  diary-backup:
+    build: ./backup
+    profiles:
+      - backup
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DIARY_HOSTNAME: ${DIARY_HOSTNAME:-diary-server}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_PREFIX: ${R2_PREFIX:-my-diary}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TO: ${SMTP_TO:-}
+    volumes:
+      - type: bind
+        source: ${DIARY_HOST_DATA_DIR:?Set DIARY_HOST_DATA_DIR in .env}
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+      - restic-cache:/cache
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/run:size=1m,mode=755
+
+volumes:
+  restic-cache:

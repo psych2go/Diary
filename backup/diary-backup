@@ -1,0 +1,239 @@
+#!/bin/sh
+set -eu
+umask 077
+
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*"
+}
+
+require_variable() {
+  variable_name="$1"
+  eval "variable_value=\${$variable_name:-}"
+  if [ -z "$variable_value" ]; then
+    log "configuration error: $variable_name is required"
+    return 1
+  fi
+}
+
+require_single_line() {
+  variable_name="$1"
+  eval "variable_value=\${$variable_name:-}"
+  case "$variable_value" in
+    *'
+'*|*"$(printf '\r')"*)
+      log "configuration error: $variable_name must be a single line"
+      return 1
+      ;;
+  esac
+}
+
+configure_restic() {
+  require_variable R2_ACCOUNT_ID
+  require_variable R2_BUCKET
+  require_variable R2_ACCESS_KEY_ID
+  require_variable R2_SECRET_ACCESS_KEY
+  require_variable RESTIC_PASSWORD
+
+  prefix="${R2_PREFIX:-my-diary}"
+  export RESTIC_REPOSITORY="s3:https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET}/${prefix}"
+  export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  export AWS_DEFAULT_REGION="auto"
+}
+
+configure_smtp() {
+  require_variable SMTP_URL
+  require_variable SMTP_USERNAME
+  require_variable SMTP_PASSWORD
+  require_variable SMTP_FROM
+  require_variable SMTP_TO
+  require_single_line SMTP_URL
+  require_single_line SMTP_USERNAME
+  require_single_line SMTP_PASSWORD
+  require_single_line SMTP_FROM
+  require_single_line SMTP_TO
+}
+
+smtp_is_configured() {
+  [ -n "${SMTP_URL:-}${SMTP_USERNAME:-}${SMTP_PASSWORD:-}${SMTP_FROM:-}${SMTP_TO:-}" ]
+}
+
+validate_optional_smtp() {
+  if smtp_is_configured; then
+    configure_smtp
+  else
+    log "email alerts are disabled"
+  fi
+}
+
+escape_curl_config_value() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+send_failure_email() {
+  task="$1"
+  if ! smtp_is_configured; then
+    log "email alerts are disabled for failed task: $task"
+    return 0
+  fi
+  if ! configure_smtp; then
+    log "email alert unavailable for failed task: $task"
+    return 0
+  fi
+
+  message_file="$(mktemp)"
+  {
+    printf 'From: %s\r\n' "$SMTP_FROM"
+    printf 'To: %s\r\n' "$SMTP_TO"
+    printf 'Subject: [MyDiary] %s failed\r\n' "$task"
+    printf 'Content-Type: text/plain; charset=UTF-8\r\n'
+    printf '\r\n'
+    printf 'Task: %s\r\n' "$task"
+    printf 'Time: %s\r\n' "$(date '+%Y-%m-%d %H:%M:%S %z')"
+    printf 'Host: %s\r\n' "${DIARY_HOSTNAME:-diary-server}"
+    printf '\r\n'
+    printf 'Open the server and run the task manually to inspect the failure.\r\n'
+  } > "$message_file"
+
+  if ! {
+    printf 'silent\n'
+    printf 'show-error\n'
+    printf 'fail\n'
+    printf 'ssl-reqd\n'
+    printf 'url = "%s"\n' "$(escape_curl_config_value "$SMTP_URL")"
+    printf 'user = "%s:%s"\n' \
+      "$(escape_curl_config_value "$SMTP_USERNAME")" \
+      "$(escape_curl_config_value "$SMTP_PASSWORD")"
+    printf 'mail-from = "%s"\n' "$(escape_curl_config_value "$SMTP_FROM")"
+    printf 'mail-rcpt = "%s"\n' "$(escape_curl_config_value "$SMTP_TO")"
+    printf 'upload-file = "%s"\n' "$(escape_curl_config_value "$message_file")"
+  } | curl --config -; then
+    log "failed to send email alert for task: $task"
+  fi
+
+  rm -f "$message_file"
+}
+
+run_task() {
+  task="$1"
+  shift
+  output_file="$(mktemp)"
+
+  if "$@" > "$output_file" 2>&1; then
+    log "$task succeeded"
+    rm -f "$output_file"
+    return 0
+  else
+    status="$?"
+  fi
+
+  log "$task failed with exit code $status"
+  send_failure_email "$task"
+  rm -f "$output_file"
+  return "$status"
+}
+
+backup_diary() {
+  set -- /instructions/RESTORE.md
+  for year_directory in /data/[0-9][0-9][0-9][0-9]; do
+    if [ -d "$year_directory" ]; then
+      set -- "$@" "$year_directory"
+    fi
+  done
+
+  restic backup "$@" --host my-diary --tag diary
+  restic forget \
+    --tag diary \
+    --group-by tags \
+    --keep-daily 30 \
+    --keep-monthly 12 \
+    --keep-yearly unlimited \
+    --prune
+}
+
+check_repository() {
+  restic check --read-data
+}
+
+restore_test() {
+  restore_directory="$(mktemp -d)"
+  trap 'rm -rf "$restore_directory"' EXIT INT TERM
+
+  restic restore latest --tag diary --target "$restore_directory"
+
+  diary_count="$(find "$restore_directory/data" -type f -name '*.md' 2>/dev/null | wc -l)"
+  if [ "$diary_count" -lt 1 ]; then
+    log "restore test found no Markdown diary files"
+    return 1
+  fi
+
+  find "$restore_directory/data" -type f -name '*.md' -exec test -s '{}' ';'
+  rm -rf "$restore_directory"
+  trap - EXIT INT TERM
+}
+
+restore_latest() {
+  mkdir -p /restore
+  restic restore latest --tag diary --target /restore
+}
+
+start_daemon() {
+  configure_restic
+  validate_optional_smtp
+
+  if ! restic snapshots --tag diary >/dev/null 2>&1; then
+    log "backup repository is unavailable; run the init command first"
+    send_failure_email "backup repository startup check"
+    return 1
+  fi
+
+  log "backup scheduler started"
+  exec crond -f -l 5
+}
+
+command="${1:-daemon}"
+case "$command" in
+  daemon)
+    start_daemon
+    ;;
+  init)
+    configure_restic
+    restic init
+    ;;
+  backup)
+    configure_restic
+    run_task "manual backup" backup_diary
+    ;;
+  check)
+    configure_restic
+    run_task "manual integrity check" check_repository
+    ;;
+  restore-test)
+    configure_restic
+    run_task "manual restore test" restore_test
+    ;;
+  restore)
+    configure_restic
+    run_task "manual restore" restore_latest
+    ;;
+  snapshots)
+    configure_restic
+    restic snapshots --tag diary
+    ;;
+  scheduled-backup)
+    configure_restic
+    run_task "daily encrypted backup" backup_diary
+    ;;
+  scheduled-check)
+    configure_restic
+    run_task "monthly integrity check" check_repository
+    ;;
+  scheduled-restore-test)
+    configure_restic
+    run_task "semiannual restore test" restore_test
+    ;;
+  *)
+    log "unknown command: $command"
+    exit 2
+    ;;
+esac

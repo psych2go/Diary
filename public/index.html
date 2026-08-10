@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f8fa">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>日记</title>
+    <link rel="manifest" href="/manifest.webmanifest?v=2">
+    <link rel="icon" href="/icon.svg?v=2" type="image/svg+xml">
+    <link rel="icon" href="/icon-32.png?v=2" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="/icon-192.png?v=2">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="login-view" id="login-view" hidden>
+        <div class="login-mark" aria-hidden="true">记</div>
+        <h1>日记</h1>
+        <form id="login-form">
+          <label class="sr-only" for="password">密码</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="输入密码"
+            required
+          >
+          <button class="primary-button" type="submit">进入</button>
+          <p class="form-error" id="login-error" role="alert"></p>
+        </form>
+      </section>
+
+      <section class="diary-view" id="diary-view" hidden>
+        <header class="topbar">
+          <div>
+            <p class="weekday" id="weekday"></p>
+            <h1 id="display-date"></h1>
+          </div>
+          <button class="icon-button" id="history-button" type="button" aria-label="查看过去的日记" title="过去的日记">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+              <path d="M3 3v5h5"></path>
+              <path d="M12 7v5l3 2"></path>
+            </svg>
+          </button>
+        </header>
+
+        <form class="entry-form" id="entry-form">
+          <label class="sr-only" for="entry">今天想记下什么</label>
+          <textarea
+            id="entry"
+            name="entry"
+            maxlength="100000"
+            placeholder="现在想说什么？"
+            enterkeyhint="done"
+          ></textarea>
+          <div class="entry-actions">
+            <button
+              class="record-button"
+              id="save-button"
+              type="button"
+              aria-label="开始记录"
+              title="开始记录"
+            >
+              <svg class="record-icon" aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="9" y="2" width="6" height="12" rx="3"></rect>
+                <path d="M5 10a7 7 0 0 0 14 0"></path>
+                <path d="M12 17v5"></path>
+              </svg>
+              <svg class="save-icon" aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5"></path>
+              </svg>
+            </button>
+            <p class="save-state" id="save-state" aria-live="polite"></p>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <dialog class="history-dialog" id="history-dialog">
+      <div class="dialog-header">
+        <div class="view-switch" aria-label="查看内容">
+          <button class="view-switch-button" id="entries-view-button" type="button" aria-pressed="true">日记</button>
+          <button class="view-switch-button" id="stats-view-button" type="button" aria-pressed="false">统计</button>
+        </div>
+        <button class="icon-button" id="close-history" type="button" aria-label="关闭" title="关闭">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="history-layout" id="entries-panel">
+        <nav class="date-list" id="date-list" aria-label="日记日期"></nav>
+        <article class="entry-reader" id="entry-reader">
+          <p class="empty-history">选择一天</p>
+        </article>
+      </div>
+      <section class="stats-view" id="stats-panel" hidden>
+        <div class="stats-summary">
+          <div class="stat">
+            <strong id="month-days">0</strong>
+            <span>当月记录</span>
+          </div>
+          <div class="stat">
+            <strong id="current-streak">0</strong>
+            <span>当前连续</span>
+          </div>
+          <div class="stat">
+            <strong id="longest-streak">0</strong>
+            <span>最长连续</span>
+          </div>
+        </div>
+        <div class="calendar">
+          <div class="calendar-header">
+            <button class="icon-button" id="previous-month" type="button" aria-label="上个月" title="上个月">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m15 18-6-6 6-6"></path>
+              </svg>
+            </button>
+            <h2 id="calendar-month"></h2>
+            <button class="icon-button" id="next-month" type="button" aria-label="下个月" title="下个月">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="calendar-weekdays" aria-hidden="true">
+            <span>日</span>
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span>六</span>
+          </div>
+          <div class="calendar-grid" id="calendar-grid"></div>
+        </div>
+      </section>
+      <button class="logout-button" id="logout-button" type="button">退出登录</button>
+    </dialog>
+  </body>
+</html>

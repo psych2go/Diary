@@ -1,0 +1,3 @@
+17 3 * * * /usr/local/bin/diary-backup scheduled-backup
+43 4 1 * * /usr/local/bin/diary-backup scheduled-check
+23 5 1 1,7 * /usr/local/bin/diary-backup scheduled-restore-test
