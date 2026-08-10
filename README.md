@@ -1,5 +1,7 @@
 # MyDiary
 
+[简体中文](README.zh-CN.md) | English
+
 MyDiary is a minimal, self-hosted Markdown diary designed for quick daily writing on mobile
 devices. It provides one focused workflow: open the page, dictate or type an entry, and save it.
 
