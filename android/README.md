@@ -40,6 +40,9 @@ Android 工程已经生成并提交，不再依赖 Bubblewrap 或其他 Node.js 
 android/create-signing-key.sh
 ```
 
+如需自定义证书主体，可在首次创建密钥时设置 `ANDROID_KEY_DNAME`。该值会公开出现在签名
+证书中，不应包含不希望公开的个人信息。
+
 签名密钥默认保存在：
 
 ```text

@@ -12,19 +12,18 @@
 - R2 backups are encrypted by Restic before leaving the server.
 - Android release keys live outside the repository and are created with `0600` permissions.
 
-## Explicit residual risks
+## Residual risks
 
-The following risks are accepted or cannot be removed without changing the product:
+The following risks should be evaluated for each deployment:
 
 1. Server administrators and anyone who gains root access can read plaintext diary files.
 2. An unlocked phone with an active 30-day session can open the diary.
 3. An unsaved draft is plaintext in that device's browser local storage until saved or logged out.
-4. R2 Bucket Lock is disabled by user decision. Stolen R2 write credentials may delete backups.
+4. Deployments without object lock allow stolen R2 write credentials to delete backups.
 5. Compromise of the Cloudflare account, DNS, TLS origin, or Android signing key can undermine the
    TWA trust relationship.
-6. The old private GitHub repository still contains historical plaintext diary data.
-7. A global login limit can temporarily deny login after repeated malicious failures.
-8. Users with Docker daemon access can inspect backup container environment variables. Docker
+6. A global login limit can temporarily deny login after repeated malicious failures.
+7. Users with Docker daemon access can inspect backup container environment variables. Docker
    access must be treated as root access and restricted to trusted administrators.
 
 ## Production checklist
@@ -32,7 +31,8 @@ The following risks are accepted or cannot be removed without changing the produ
 - Store diary files outside the source tree with mode `0700` on the directory and `0600` on files.
 - Set `.env` to mode `0600`.
 - Use a long unique login password and generate `DIARY_PASSWORD_HASH`.
-- Keep `DIARY_SESSION_SECRET`, Restic password, R2 credentials, and SMTP password in Bitwarden.
+- Keep `DIARY_SESSION_SECRET`, Restic password, R2 credentials, and SMTP password in a trusted
+  password manager and an appropriate recovery location.
 - Do not grant Docker group or daemon access to untrusted server users.
 - Limit the R2 token to the dedicated diary bucket.
 - Bind the app to `127.0.0.1`; expose only HTTPS through the reverse proxy or named tunnel.
@@ -54,7 +54,7 @@ Compromised server:
 1. Disconnect the server from the network.
 2. Rotate the login password, session secret, R2 token, SMTP password, and tunnel credentials.
 3. Restore onto a clean server from the most recent verified Restic snapshot.
-4. Inspect R2 snapshots for deletion because Bucket Lock is intentionally disabled.
+4. Inspect R2 snapshots for deletion and verify the configured object-lock policy.
 
 Lost Android signing key:
 

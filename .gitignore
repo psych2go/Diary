@@ -6,6 +6,7 @@ node_modules/
 npm-debug.log*
 *.keystore
 *.jks
+*.idsig
 android/.gradle/
 android/app/build/
 android/build/

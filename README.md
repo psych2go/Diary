@@ -17,14 +17,9 @@
 
 ## Android App
 
-仓库包含包名为 `fun.zhuying.diary` 的 Android TWA 工程，正式地址固定为：
-
-```text
-https://diary.zhuying.fun/
-```
-
-Android 应用是网页的轻量外壳，网页更新后不需要重新发布 APK。签名、Digital Asset
-Links、APK/AAB 构建和安装步骤见 [android/README.md](android/README.md)。
+仓库包含 Android 网页外壳工程。网页更新后通常不需要重新发布 APK；生产域名、包名、
+签名、Digital Asset Links、APK/AAB 构建和安装步骤见
+[android/README.md](android/README.md)。
 
 ## 本地运行
 
@@ -54,7 +49,7 @@ openssl rand -base64 48
 `RESTIC_PASSWORD`。同时：
 
 - 运行 `npm run password:hash`，把输出填入 `DIARY_PASSWORD_HASH`
-- 将 `RESTIC_PASSWORD` 保存到 Bitwarden 和离线位置
+- 将 `RESTIC_PASSWORD` 保存到可信密码管理器和适当的恢复位置
 - 通过 `id -u`、`id -g` 设置 `DIARY_UID`、`DIARY_GID`
 - 将 `.env` 权限设为 `0600`，不要提交到 Git
 
@@ -66,7 +61,7 @@ openssl rand -base64 48
 
 ```bash
 sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /srv/my-diary/data
-sudo cp -a 2026 /srv/my-diary/data/
+sudo cp -a /path/to/existing-diary-data/. /srv/my-diary/data/
 ```
 
 在 `.env` 中设置：
@@ -86,7 +81,8 @@ DIARY_HOST_DATA_DIR=/srv/my-diary/data
 2. 创建只对该 bucket 生效的对象读写 R2 API token。
 3. 将 Account ID、Access Key ID、Secret Access Key 和 bucket 名填入 `.env`。
 
-应用使用 R2 的 S3 兼容接口。按已确认的风险边界，不启用 Bucket Lock。
+应用使用 R2 的 S3 兼容接口。是否启用 Bucket Lock 或其他对象锁策略，应根据部署者的
+恢复需求和凭据泄露风险决定。
 
 ### 4. 配置失败邮件
 
@@ -183,11 +179,11 @@ docker compose run --rm diary-backup restore-test
 
 ## 手机使用
 
-用 Safari 或 Chrome 打开 HTTPS 地址并登录，再通过浏览器菜单选择“添加到主屏幕”。
+用现代浏览器打开 HTTPS 地址并登录，再通过浏览器菜单选择“添加到主屏幕”。
 输入框会自动保存未提交草稿；离线时不会自动提交，恢复网络后需要再次点击“记下”。
 草稿以未加密形式保存在当前设备浏览器的本地存储中，保存成功或退出登录后会删除。
 
-## GitHub 旧仓库
+## Repository hygiene
 
-现有 GitHub 私有仓库可以暂时作为只读旧档案保留，但应用不会继续推送明文。完成首次
-R2 恢复测试后，再决定是否删除旧仓库。
+日记数据、`.env`、Android 签名密钥、构建产物和恢复密码不得提交到源码仓库。发布源码
+前应检查完整 Git 历史，而不只是当前文件树。

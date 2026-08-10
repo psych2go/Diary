@@ -7,7 +7,7 @@ R2 中的备份由 Restic 加密。恢复需要以下信息：
 - R2 Access Key ID 和 Secret Access Key
 - Restic 仓库密码
 
-密钥不存放在备份中，应从 Bitwarden 或离线副本取得。
+密钥不存放在备份中，应从可信密码管理器或离线恢复副本取得。
 
 在项目目录配置好 `.env` 后，先检查仓库：
 

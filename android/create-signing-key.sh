@@ -5,6 +5,7 @@ umask 077
 KEY_DIRECTORY="${XDG_CONFIG_HOME:-$HOME/.config}/my-diary/android"
 KEYSTORE="$KEY_DIRECTORY/diary.keystore"
 PASSWORD_FILE="${ANDROID_KEYSTORE_PASSWORD_FILE:-}"
+KEY_DNAME="${ANDROID_KEY_DNAME:-CN=MyDiary, OU=Android, O=Example}"
 
 if ! command -v keytool >/dev/null 2>&1; then
   printf '%s\n' "keytool was not found. Install JDK 17 first." >&2
@@ -28,7 +29,7 @@ if [ -n "$PASSWORD_FILE" ]; then
     -keyalg RSA \
     -keysize 2048 \
     -validity 10000 \
-    -dname "CN=MyDiary, OU=Personal, O=Zhuying, C=CN" \
+    -dname "$KEY_DNAME" \
     -storepass:file "$PASSWORD_FILE" \
     -keypass:file "$PASSWORD_FILE"
 else
@@ -38,7 +39,7 @@ else
     -keyalg RSA \
     -keysize 2048 \
     -validity 10000 \
-    -dname "CN=MyDiary, OU=Personal, O=Zhuying, C=CN"
+    -dname "$KEY_DNAME"
 fi
 chmod 600 "$KEYSTORE"
 
