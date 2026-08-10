@@ -15,6 +15,7 @@ import {
 } from "./src/auth.js";
 import { createAssetLinks, parseAndroidFingerprints } from "./src/asset-links.js";
 import { appendEntry, listEntries, readEntry } from "./src/diary-store.js";
+import { LoginLimiter, loginClientKey } from "./src/login-limiter.js";
 import { calculateStats, shanghaiTimestamp } from "./src/stats.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,7 @@ const sessionSigningSecret = crypto
   .update(passwordCredential)
   .digest("hex");
 
-let loginAttempts = [];
+const loginLimiter = new LoginLimiter();
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -138,16 +139,6 @@ function isAllowedMutation(request) {
   }
 }
 
-function canAttemptLogin() {
-  const now = Date.now();
-  loginAttempts = loginAttempts.filter((time) => now - time < 10 * 60 * 1000);
-  return loginAttempts.length < 20;
-}
-
-function recordFailedLogin() {
-  loginAttempts.push(Date.now());
-}
-
 async function handleApi(request, response, url) {
   if (!isAllowedMutation(request)) {
     return sendJson(response, 403, { error: "拒绝跨站请求" });
@@ -158,18 +149,19 @@ async function handleApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/login") {
-    if (!canAttemptLogin()) {
+    const clientKey = loginClientKey(request);
+    if (!loginLimiter.canAttempt(clientKey)) {
       response.setHeader("Retry-After", "600");
       return sendJson(response, 429, { error: "尝试次数过多，请稍后再试" });
     }
 
     const body = await readJson(request, 16 * 1024);
     if (!passwordMatches(String(body.password || ""), passwordCredential)) {
-      recordFailedLogin();
+      loginLimiter.recordFailure(clientKey);
       return sendJson(response, 401, { error: "密码不正确" });
     }
 
-    loginAttempts = [];
+    loginLimiter.clear(clientKey);
     const cookies = [
       sessionCookie(createSession(sessionSigningSecret), secureCookie)
     ];

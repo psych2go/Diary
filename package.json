@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "DIARY_PASSWORD=diary-dev-password node --watch server.js",
+    "dev": "sh scripts/dev.sh",
     "test": "node --test",
     "password:hash": "sh scripts/hash-password.sh",
     "android:icons": "node scripts/generate-icons.mjs",

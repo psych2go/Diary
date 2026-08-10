@@ -70,14 +70,16 @@ npm install
 npm run dev
 ```
 
+The development command prompts for a local password without echoing it or storing a default
+credential in the repository.
+
 Open:
 
 ```text
 http://127.0.0.1:3000
 ```
 
-The development-only login password is defined by the `dev` script in `package.json`. Do not
-expose the development server to a network.
+Do not expose the development server to a network.
 
 Run the tests:
 
