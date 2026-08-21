@@ -20,8 +20,8 @@
     "path": "~/.config/my-diary/android/diary.keystore",
     "alias": "diary"
   },
-  "appVersionName": "1.0.3",
-  "appVersionCode": 4,
+  "appVersionName": "1.0.4",
+  "appVersionCode": 5,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://diary.zhuying.fun/manifest.webmanifest",
@@ -40,5 +40,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "1.0.3"
+  "appVersion": "1.0.4"
 }

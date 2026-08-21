@@ -98,7 +98,7 @@ function showLogin() {
   passwordInput.focus();
 }
 
-function showDiary() {
+function showDiary(focus = false) {
   loginView.hidden = true;
   diaryView.hidden = false;
   const now = new Date();
@@ -106,6 +106,9 @@ function showDiary() {
   weekday.textContent = `${fullDateFormatter.format(now)} · ${weekdayFormatter.format(now)}`;
   entryInput.value = localStorage.getItem(draftKey()) || "";
   setRecordingState(Boolean(entryInput.value.trim()));
+  if (focus) {
+    entryInput.focus();
+  }
 }
 
 function setRecordingState(recording) {
@@ -126,7 +129,8 @@ loginForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({ password: passwordInput.value })
     });
     passwordInput.value = "";
-    showDiary();
+    localStorage.setItem(AUTH_FLAG_KEY, "1");
+    showDiary(true);
   } catch (error) {
     loginError.textContent = error.message;
     passwordInput.select();
@@ -355,6 +359,7 @@ historyDialog.addEventListener("click", (event) => {
 logoutButton.addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" });
   localStorage.removeItem(draftKey());
+  localStorage.removeItem("diary-authenticated");
   entryInput.value = "";
   saveState.textContent = "";
   setRecordingState(false);
@@ -362,11 +367,29 @@ logoutButton.addEventListener("click", async () => {
   showLogin();
 });
 
-const session = await api("/api/session");
-if (session.authenticated) {
-  showDiary();
-} else {
-  showLogin();
+// 先用本地标记立即进入记录界面，再在后台验证会话。
+const AUTH_FLAG_KEY = "diary-authenticated";
+
+if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
+  showDiary(true);
+}
+
+try {
+  const session = await api("/api/session");
+  if (session.authenticated) {
+    localStorage.setItem(AUTH_FLAG_KEY, "1");
+    if (diaryView.hidden) {
+      showDiary(true);
+    }
+  } else {
+    localStorage.removeItem(AUTH_FLAG_KEY);
+    showLogin();
+  }
+} catch {
+  // 网络不可用时保留当前界面；保存失败时草稿仍在。
+  if (loginView.hidden && diaryView.hidden) {
+    showLogin();
+  }
 }
 
 if ("serviceWorker" in navigator) {

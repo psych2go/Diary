@@ -1,4 +1,4 @@
-const CACHE = "my-diary-v8";
+const CACHE = "my-diary-v9";
 const APP_SHELL = [
   "/",
   "/styles.css",
@@ -30,13 +30,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // 缓存优先：应用外壳立即从缓存渲染，同时在后台更新缓存。
   event.respondWith(
-    fetch(event.request, { cache: "no-cache" })
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request))
+    caches.match(event.request).then((cached) => {
+      const network = fetch(event.request, { cache: "no-cache" })
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
+    })
   );
 });

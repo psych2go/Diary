@@ -45,15 +45,15 @@ test("Android TWA targets the production diary domain", async () => {
   assert.equal(manifest.host, "diary.zhuying.fun");
   assert.equal(manifest.startUrl, "/");
   assert.equal(manifest.fallbackType, "webview");
-  assert.equal(manifest.appVersionCode, 4);
-  assert.equal(manifest.appVersionName, "1.0.3");
+  assert.equal(manifest.appVersionCode, 5);
+  assert.equal(manifest.appVersionName, "1.0.4");
   assert.equal(
     manifest.webManifestUrl,
     "https://diary.zhuying.fun/manifest.webmanifest"
   );
   assert.match(gradle, /fallbackType:\s*'webview'/);
-  assert.match(gradle, /versionCode 4/);
-  assert.match(gradle, /versionName "1\.0\.3"/);
+  assert.match(gradle, /versionCode 5/);
+  assert.match(gradle, /versionName "1.0.4"/);
   assert.doesNotMatch(gradle, /localhost|127\.0\.0\.1/);
   assert.doesNotMatch(rootGradle, /jcenter\(\)/);
   assert.match(rootGradle, /mavenCentral\(\)/);
@@ -68,7 +68,7 @@ test("Android TWA targets the production diary domain", async () => {
   );
   assert.match(index, /icon\.svg\?v=2/);
   assert.match(index, /apple-touch-icon/);
-  assert.match(serviceWorker, /my-diary-v8/);
+  assert.match(serviceWorker, /my-diary-v9/);
 });
 
 test("PWA provides required Android icon sizes", async () => {

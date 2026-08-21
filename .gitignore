@@ -13,3 +13,4 @@ android/build/
 android/app-release-bundle.aab
 android/app-release-signed.apk
 [0-9][0-9][0-9][0-9]/*.md
+android/local.properties
