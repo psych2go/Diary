@@ -169,6 +169,52 @@ docker compose --profile backup up -d diary-backup
 R2 中保存的是 Restic 加密对象，而不是可以直接阅读的 Markdown。恢复日记必须同时
 拥有 R2 凭据和 Restic 密码。这些凭据必须保存在源码仓库之外。
 
+## R2 图床
+
+图片使用独立的 R2 Bucket，不与加密备份混用：
+
+```text
+Bucket: zhuying-blog-images
+公开域名: https://image.zhuying.fun
+```
+
+`image.zhuying.fun` 已作为 R2 自定义域名启用，`r2.dev` 公网地址保持关闭。上传操作
+通过 Wrangler 的 OAuth 登录完成，不需要把 R2 Access Key 写入仓库。
+
+首次在一台新设备上使用时安装并登录 Wrangler：
+
+```bash
+npm install --global wrangler
+wrangler login
+wrangler whoami
+```
+
+上传图片：
+
+```bash
+npm run image:upload -- /path/to/photo.webp "图片说明"
+```
+
+命令会按 `images/YYYY/MM/文件名-内容哈希.扩展名` 上传，设置正确的
+`Content-Type` 和一年不可变缓存，然后输出可直接使用的 URL 和 Markdown：
+
+```text
+URL: https://image.zhuying.fun/images/2026/08/photo-a1b2c3d4e5f6.webp
+Markdown: ![图片说明](https://image.zhuying.fun/images/2026/08/photo-a1b2c3d4e5f6.webp)
+```
+
+可通过环境变量覆盖默认配置：
+
+```bash
+R2_IMAGE_BUCKET=another-bucket \
+R2_IMAGE_BASE_URL=https://img.example.com \
+R2_IMAGE_PREFIX=uploads \
+npm run image:upload -- /path/to/photo.png "图片说明"
+```
+
+支持 `.avif`、`.gif`、`.jpeg`、`.jpg`、`.png`、`.svg` 和 `.webp`。由于 URL 使用
+长期不可变缓存，修改图片内容时应重新上传并使用命令生成的新 URL。
+
 ## Android 应用
 
 Android 工程是托管网页应用的轻量外壳，支持：

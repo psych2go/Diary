@@ -9,6 +9,7 @@
     "dev": "sh scripts/dev.sh",
     "test": "node --test",
     "password:hash": "sh scripts/hash-password.sh",
+    "image:upload": "node scripts/upload-image.mjs",
     "android:icons": "node scripts/generate-icons.mjs",
     "android:build": "sh android/build.sh",
     "android:verify": "sh android/verify-domain.sh"

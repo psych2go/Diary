@@ -171,6 +171,52 @@ Default policy:
 R2 stores encrypted Restic objects, not directly readable Markdown. Recovery requires both the R2
 credentials and the Restic password. Keep those credentials outside the repository.
 
+## R2 image hosting
+
+Images use a dedicated R2 bucket and are kept separate from encrypted backups:
+
+```text
+Bucket: zhuying-blog-images
+Public domain: https://image.zhuying.fun
+```
+
+`image.zhuying.fun` is enabled as the R2 custom domain while public `r2.dev` access remains disabled.
+Uploads use Wrangler OAuth, so R2 access keys do not need to be stored in this repository.
+
+Install and authenticate Wrangler once on each device:
+
+```bash
+npm install --global wrangler
+wrangler login
+wrangler whoami
+```
+
+Upload an image:
+
+```bash
+npm run image:upload -- /path/to/photo.webp "Image description"
+```
+
+The command uploads to `images/YYYY/MM/name-content-hash.extension`, sets the correct content type
+and one-year immutable caching, then prints the public URL and ready-to-use Markdown:
+
+```text
+URL: https://image.zhuying.fun/images/2026/08/photo-a1b2c3d4e5f6.webp
+Markdown: ![Image description](https://image.zhuying.fun/images/2026/08/photo-a1b2c3d4e5f6.webp)
+```
+
+Override the defaults with environment variables when needed:
+
+```bash
+R2_IMAGE_BUCKET=another-bucket \
+R2_IMAGE_BASE_URL=https://img.example.com \
+R2_IMAGE_PREFIX=uploads \
+npm run image:upload -- /path/to/photo.png "Image description"
+```
+
+Supported extensions are `.avif`, `.gif`, `.jpeg`, `.jpg`, `.png`, `.svg`, and `.webp`. Because
+URLs use immutable caching, upload changed image content again and use the newly generated URL.
+
 ## Android app
 
 The Android project is a lightweight wrapper around the hosted web application. It supports:
