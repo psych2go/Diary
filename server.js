@@ -232,10 +232,19 @@ async function serveStatic(response, pathname) {
     const shouldRevalidate = [".css", ".html", ".js", ".webmanifest"].includes(
       path.extname(filePath)
     );
-    response.writeHead(200, {
-      "Cache-Control": shouldRevalidate ? "no-cache" : "public, max-age=3600",
+    const headers = {
+      "Cache-Control": shouldRevalidate
+        ? "no-cache, must-revalidate"
+        : "public, max-age=3600",
       "Content-Type": contentType
-    });
+    };
+    if (shouldRevalidate) {
+      headers["Cloudflare-CDN-Cache-Control"] = "no-store";
+    }
+    if (path.basename(filePath) === "sw.js") {
+      headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+    }
+    response.writeHead(200, headers);
     response.end(content);
     return true;
   } catch (error) {

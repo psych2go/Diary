@@ -99,6 +99,15 @@ test("production server rejects cross-site writes and sets hardened cookies", as
   assert.equal(home.headers.get("strict-transport-security"), "max-age=31536000");
   assert.equal(home.headers.get("cross-origin-opener-policy"), "same-origin");
   assert.equal(home.headers.get("cross-origin-resource-policy"), "same-origin");
+  assert.equal(home.headers.get("cache-control"), "no-cache, must-revalidate");
+  assert.equal(home.headers.get("cloudflare-cdn-cache-control"), "no-store");
+
+  const serviceWorker = await fetch(`${origin}/sw.js`);
+  assert.equal(
+    serviceWorker.headers.get("cache-control"),
+    "no-store, no-cache, must-revalidate"
+  );
+  assert.equal(serviceWorker.headers.get("cloudflare-cdn-cache-control"), "no-store");
 
   const malformedHostResponse = await rawRequest(
     port,

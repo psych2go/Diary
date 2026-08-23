@@ -302,6 +302,13 @@ button {
   opacity: 0.72;
 }
 
+.icon-button:disabled,
+.record-button:disabled,
+.entry-form textarea:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .history-dialog {
   width: min(920px, calc(100% - 32px));
   height: min(760px, calc(100svh - 32px));

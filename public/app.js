@@ -52,6 +52,19 @@ let stats = null;
 let visibleMonth = null;
 let isRecording = false;
 let isSaving = false;
+let saveOperation = 0;
+let diaryInteractive = false;
+let sessionCheckPromise = null;
+let logoutRequestPromise = null;
+let authGeneration = 0;
+let sessionRetryTimer = null;
+let sessionRetryAttempt = 0;
+let historyGeneration = 0;
+
+const AUTH_FLAG_KEY = "diary-authenticated";
+const LOGOUT_PENDING_KEY = "diary-logout-pending";
+const SESSION_RETRY_DELAYS = [2000, 5000, 15_000, 30_000];
+const SESSION_TIMEOUT_MS = 10_000;
 
 function localDateParts(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -76,36 +89,154 @@ function draftKey() {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers
+  const { timeoutMs = 0, ...fetchOptions } = options;
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  try {
+    const response = await fetch(path, {
+      ...fetchOptions,
+      signal: controller?.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...fetchOptions.headers
+      }
+    });
+
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        throw error;
+      }
+      // Preserve the HTTP status when an intermediary returns a non-JSON error page.
     }
-  });
-  const data = await response.json();
 
-  if (!response.ok) {
-    throw new Error(data.error || "请求失败");
+    if (!response.ok) {
+      const error = new Error(data.error || "请求失败");
+      error.status = response.status;
+      if (
+        response.status === 401 &&
+        path !== "/api/login" &&
+        path !== "/api/session"
+      ) {
+        lockDiary();
+      }
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError" || controller?.signal.aborted) {
+      throw new Error("请求超时，请重试");
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
+}
 
-  return data;
+function updateDiaryHeader() {
+  const now = new Date();
+  displayDate.textContent = dateFormatter.format(now);
+  weekday.textContent = `${fullDateFormatter.format(now)} · ${weekdayFormatter.format(now)}`;
+}
+
+function setDiaryInteractive(interactive) {
+  diaryInteractive = interactive;
+  entryInput.disabled = !interactive;
+  saveButton.disabled = !interactive;
+  historyButton.disabled = !interactive;
+  diaryView.setAttribute("aria-busy", String(!interactive));
+}
+
+function clearPrivateViews() {
+  historyGeneration += 1;
+  if (historyDialog.open) {
+    historyDialog.close();
+  }
+  dateList.replaceChildren();
+  entryReader.replaceChildren();
+  calendarGrid.replaceChildren();
+  stats = null;
+  visibleMonth = null;
+  monthDays.textContent = "0";
+  currentStreak.textContent = "0";
+  longestStreak.textContent = "0";
+}
+
+function clearSessionRetry() {
+  if (sessionRetryTimer) {
+    clearTimeout(sessionRetryTimer);
+    sessionRetryTimer = null;
+  }
+  sessionRetryAttempt = 0;
+}
+
+function scheduleSessionRetry() {
+  if (
+    sessionRetryTimer ||
+    localStorage.getItem(LOGOUT_PENDING_KEY) === "1"
+  ) {
+    return;
+  }
+  const delay = SESSION_RETRY_DELAYS[
+    Math.min(sessionRetryAttempt, SESSION_RETRY_DELAYS.length - 1)
+  ];
+  sessionRetryAttempt += 1;
+  sessionRetryTimer = setTimeout(() => {
+    sessionRetryTimer = null;
+    validateSession();
+  }, delay);
 }
 
 function showLogin() {
+  clearPrivateViews();
   diaryView.hidden = true;
   loginView.hidden = false;
+  entryInput.value = "";
+  saveState.textContent = "";
+  setRecordingState(false);
+  setDiaryInteractive(false);
   passwordInput.focus();
+}
+
+function lockDiary({ removeDraft = false } = {}) {
+  authGeneration += 1;
+  saveOperation += 1;
+  isSaving = false;
+  saveButton.classList.remove("is-saving");
+  clearSessionRetry();
+  localStorage.removeItem(AUTH_FLAG_KEY);
+  if (removeDraft) {
+    localStorage.removeItem(draftKey());
+  }
+  showLogin();
+}
+
+function showDiaryShell() {
+  loginView.hidden = true;
+  diaryView.hidden = false;
+  updateDiaryHeader();
+  entryInput.value = "";
+  setRecordingState(false);
+  setDiaryInteractive(false);
+  saveState.textContent = "正在验证会话…";
 }
 
 function showDiary(focus = false) {
   loginView.hidden = true;
   diaryView.hidden = false;
-  const now = new Date();
-  displayDate.textContent = dateFormatter.format(now);
-  weekday.textContent = `${fullDateFormatter.format(now)} · ${weekdayFormatter.format(now)}`;
+  updateDiaryHeader();
   entryInput.value = localStorage.getItem(draftKey()) || "";
   setRecordingState(Boolean(entryInput.value.trim()));
+  setDiaryInteractive(true);
+  saveState.textContent = entryInput.value.trim() ? "草稿已保留" : "";
   if (focus) {
     entryInput.focus();
   }
@@ -124,11 +255,18 @@ loginForm.addEventListener("submit", async (event) => {
   loginError.textContent = "";
 
   try {
+    authGeneration += 1;
+    if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
+      await retryPendingLogout();
+    }
     await api("/api/login", {
       method: "POST",
       body: JSON.stringify({ password: passwordInput.value })
     });
     passwordInput.value = "";
+    authGeneration += 1;
+    clearSessionRetry();
+    localStorage.removeItem(LOGOUT_PENDING_KEY);
     localStorage.setItem(AUTH_FLAG_KEY, "1");
     showDiary(true);
   } catch (error) {
@@ -156,7 +294,12 @@ entryInput.addEventListener("focus", () => {
 });
 
 async function saveEntry() {
-  const text = entryInput.value.trim();
+  if (!diaryInteractive) {
+    return;
+  }
+
+  const submittedValue = entryInput.value;
+  const text = submittedValue.trim();
   if (!text) {
     saveState.textContent = "没有内容";
     entryInput.blur();
@@ -164,7 +307,11 @@ async function saveEntry() {
     return;
   }
 
+  const generation = authGeneration;
+  const operation = ++saveOperation;
+  const submittedDraftKey = draftKey();
   isSaving = true;
+  entryInput.disabled = true;
   saveButton.disabled = true;
   saveButton.classList.add("is-saving");
   saveState.textContent = "正在记下…";
@@ -173,18 +320,36 @@ async function saveEntry() {
       method: "POST",
       body: JSON.stringify({ text })
     });
-    entryInput.value = "";
-    localStorage.removeItem(draftKey());
-    saveState.textContent = `已记下 · ${saved.time}`;
+    if (
+      generation !== authGeneration ||
+      operation !== saveOperation
+    ) {
+      return;
+    }
+    const draftUnchanged =
+      entryInput.value === submittedValue &&
+      localStorage.getItem(submittedDraftKey) === submittedValue;
+    if (draftUnchanged) {
+      entryInput.value = "";
+      localStorage.removeItem(submittedDraftKey);
+      setRecordingState(false);
+    }
+    saveState.textContent = draftUnchanged
+      ? `已记下 · ${saved.time}`
+      : `已记下 · ${saved.time}，新草稿已保留`;
     navigator.vibrate?.(25);
     entryInput.blur();
-    setRecordingState(false);
   } catch (error) {
-    saveState.textContent = error.message;
+    if (operation === saveOperation && error.status !== 401) {
+      saveState.textContent = error.message;
+    }
   } finally {
-    isSaving = false;
-    saveButton.disabled = false;
-    saveButton.classList.remove("is-saving");
+    if (operation === saveOperation) {
+      isSaving = false;
+      entryInput.disabled = !diaryInteractive;
+      saveButton.disabled = !diaryInteractive;
+      saveButton.classList.remove("is-saving");
+    }
   }
 }
 
@@ -210,7 +375,8 @@ saveButton.addEventListener("click", async () => {
   await saveEntry();
 });
 
-async function showEntry(date, button) {
+async function showEntry(date, button, generation = authGeneration) {
+  const requestGeneration = ++historyGeneration;
   for (const item of dateList.querySelectorAll(".date-button")) {
     item.setAttribute("aria-current", String(item === button));
   }
@@ -218,11 +384,25 @@ async function showEntry(date, button) {
 
   try {
     const entry = await api(`/api/entries/${encodeURIComponent(date)}`);
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      !historyDialog.open
+    ) {
+      return;
+    }
     const content = document.createElement("pre");
     content.className = "reader-content";
     content.textContent = entry.content;
     entryReader.replaceChildren(content);
   } catch (error) {
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      error.status === 401
+    ) {
+      return;
+    }
     entryReader.innerHTML = "";
     const message = document.createElement("p");
     message.className = "empty-history";
@@ -232,6 +412,8 @@ async function showEntry(date, button) {
 }
 
 async function openHistory() {
+  const generation = authGeneration;
+  const requestGeneration = ++historyGeneration;
   historyDialog.showModal();
   switchHistoryView("entries");
   dateList.innerHTML = "";
@@ -239,6 +421,13 @@ async function openHistory() {
 
   try {
     const { dates } = await api("/api/entries");
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      !historyDialog.open
+    ) {
+      return;
+    }
     if (!dates.length) {
       entryReader.innerHTML = '<p class="empty-history">还没有日记</p>';
       return;
@@ -249,13 +438,20 @@ async function openHistory() {
       button.type = "button";
       button.className = "date-button";
       button.textContent = date;
-      button.addEventListener("click", () => showEntry(date, button));
+      button.addEventListener("click", () => showEntry(date, button, generation));
       dateList.append(button);
     }
 
     const firstButton = dateList.querySelector(".date-button");
-    showEntry(dates[0], firstButton);
+    showEntry(dates[0], firstButton, generation);
   } catch (error) {
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      error.status === 401
+    ) {
+      return;
+    }
     entryReader.innerHTML = "";
     const message = document.createElement("p");
     message.className = "empty-history";
@@ -317,81 +513,200 @@ function renderCalendar() {
 }
 
 async function openStats() {
+  const generation = authGeneration;
+  const requestGeneration = ++historyGeneration;
   switchHistoryView("stats");
 
   try {
     stats = await api("/api/stats");
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      !historyDialog.open
+    ) {
+      stats = null;
+      return;
+    }
     const [year, month] = localDateParts().date.split("-").map(Number);
     visibleMonth ||= new Date(Date.UTC(year, month - 1, 1));
     currentStreak.textContent = String(stats.currentStreak);
     longestStreak.textContent = String(stats.longestStreak);
     renderCalendar();
   } catch (error) {
+    if (
+      generation !== authGeneration ||
+      requestGeneration !== historyGeneration ||
+      error.status === 401
+    ) {
+      return;
+    }
     monthDays.textContent = "—";
     currentStreak.textContent = "—";
     longestStreak.textContent = "—";
   }
 }
 
+function closeHistoryDialog() {
+  historyGeneration += 1;
+  if (historyDialog.open) {
+    historyDialog.close();
+  }
+}
+
 historyButton.addEventListener("click", openHistory);
-closeHistory.addEventListener("click", () => historyDialog.close());
-entriesViewButton.addEventListener("click", () => switchHistoryView("entries"));
+closeHistory.addEventListener("click", closeHistoryDialog);
+entriesViewButton.addEventListener("click", () => {
+  historyGeneration += 1;
+  switchHistoryView("entries");
+});
 statsViewButton.addEventListener("click", openStats);
 previousMonth.addEventListener("click", () => {
+  if (!visibleMonth) {
+    return;
+  }
   visibleMonth = new Date(
     Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)
   );
   renderCalendar();
 });
 nextMonth.addEventListener("click", () => {
+  if (!visibleMonth) {
+    return;
+  }
   visibleMonth = new Date(
     Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1)
   );
   renderCalendar();
 });
 
+historyDialog.addEventListener("close", () => {
+  historyGeneration += 1;
+});
+
 historyDialog.addEventListener("click", (event) => {
   if (event.target === historyDialog) {
-    historyDialog.close();
+    closeHistoryDialog();
   }
 });
+
+function clearLocalDiarySession() {
+  lockDiary({ removeDraft: true });
+}
+
+async function retryPendingLogout() {
+  if (localStorage.getItem(LOGOUT_PENDING_KEY) !== "1") {
+    return true;
+  }
+  if (logoutRequestPromise) {
+    return logoutRequestPromise;
+  }
+
+  logoutRequestPromise = api("/api/logout", {
+    method: "POST",
+    timeoutMs: SESSION_TIMEOUT_MS
+  })
+    .then(() => {
+      localStorage.removeItem(LOGOUT_PENDING_KEY);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      logoutRequestPromise = null;
+    });
+  return logoutRequestPromise;
+}
+
+async function validateSession({ focus = false } = {}) {
+  if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
+    return;
+  }
+  if (sessionCheckPromise) {
+    return sessionCheckPromise;
+  }
+
+  const generation = authGeneration;
+  sessionCheckPromise = (async () => {
+    try {
+      const session = await api("/api/session", {
+        timeoutMs: SESSION_TIMEOUT_MS
+      });
+      if (
+        generation !== authGeneration ||
+        localStorage.getItem(LOGOUT_PENDING_KEY) === "1"
+      ) {
+        return;
+      }
+      if (session.authenticated) {
+        clearSessionRetry();
+        localStorage.setItem(AUTH_FLAG_KEY, "1");
+        showDiary(focus);
+      } else {
+        lockDiary();
+      }
+    } catch {
+      if (generation !== authGeneration) {
+        return;
+      }
+      if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
+        if (diaryView.hidden) {
+          showDiaryShell();
+        }
+        saveState.textContent = "等待网络验证…";
+        scheduleSessionRetry();
+      } else {
+        showLogin();
+      }
+    }
+  })().finally(() => {
+    sessionCheckPromise = null;
+  });
+
+  return sessionCheckPromise;
+}
 
 logoutButton.addEventListener("click", async () => {
-  await api("/api/logout", { method: "POST" });
-  localStorage.removeItem(draftKey());
-  localStorage.removeItem("diary-authenticated");
-  entryInput.value = "";
-  saveState.textContent = "";
-  setRecordingState(false);
-  historyDialog.close();
-  showLogin();
+  localStorage.setItem(LOGOUT_PENDING_KEY, "1");
+  clearLocalDiarySession();
+  loginError.textContent = "";
+
+  if (!(await retryPendingLogout())) {
+    loginError.textContent = "已在本机退出，联网后将完成会话清理";
+  }
 });
-
-// 先用本地标记立即进入记录界面，再在后台验证会话。
-const AUTH_FLAG_KEY = "diary-authenticated";
-
-if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
-  showDiary(true);
-}
-
-try {
-  const session = await api("/api/session");
-  if (session.authenticated) {
-    localStorage.setItem(AUTH_FLAG_KEY, "1");
-    if (diaryView.hidden) {
-      showDiary(true);
-    }
-  } else {
-    localStorage.removeItem(AUTH_FLAG_KEY);
-    showLogin();
-  }
-} catch {
-  // 网络不可用时保留当前界面；保存失败时草稿仍在。
-  if (loginView.hidden && diaryView.hidden) {
-    showLogin();
-  }
-}
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js");
 }
+
+if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
+  showLogin();
+  await retryPendingLogout();
+} else {
+  if (localStorage.getItem(AUTH_FLAG_KEY) === "1") {
+    showDiaryShell();
+  } else {
+    showLogin();
+  }
+  await validateSession({ focus: true });
+}
+
+window.addEventListener("online", () => {
+  clearSessionRetry();
+  if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
+    retryPendingLogout();
+  } else {
+    validateSession();
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  clearSessionRetry();
+  if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
+    retryPendingLogout();
+  } else {
+    validateSession();
+  }
+});
