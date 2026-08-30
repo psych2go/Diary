@@ -6,11 +6,3 @@ node_modules
 npm-debug.log
 test
 [0-9][0-9][0-9][0-9]
-*.keystore
-*.jks
-*.idsig
-android/.gradle
-android/app/build
-android/build
-android/app-release-signed.apk
-android/app-release-bundle.aab

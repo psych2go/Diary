@@ -6,7 +6,7 @@ MyDiary is a minimal, self-hosted Markdown diary designed for quick daily writin
 devices. It provides one focused workflow: open the page, dictate or type an entry, and save it.
 
 The repository contains application source code only. It does not contain diary entries,
-production environment files, passwords, backup credentials, or Android signing keys.
+production environment files, passwords, or backup credentials.
 
 ## Features
 
@@ -19,7 +19,6 @@ production environment files, passwords, backup credentials, or Android signing 
 - Secure 30-day login sessions
 - Plain Markdown storage
 - Progressive Web App support
-- Optional Android WebView/TWA shell
 - Optional encrypted Cloudflare R2 backups with Restic
 
 ## Architecture
@@ -27,15 +26,14 @@ production environment files, passwords, backup credentials, or Android signing 
 | Component | Responsibility |
 | --- | --- |
 | `server.js` | HTTP server, authentication, security headers, and API routing |
-| `src/` | Password/session handling, diary storage, statistics, and Android asset links |
+| `src/` | Password/session handling, diary storage, and statistics |
 | `public/` | Mobile web interface, PWA manifest, icons, and service worker |
 | `backup/` | Restic backup, retention, integrity checks, and restore testing |
-| `android/` | Android wrapper, launcher assets, signing helpers, and build scripts |
 | `deploy/` | Generic reverse-proxy and certificate-renewal templates |
-| `test/` | Authentication, storage, backup, Android, and server security tests |
+| `test/` | Authentication, storage, backup, and server security tests |
 
-The web application remains the primary product. Most feature and UI updates only require a web
-deployment; the Android APK normally stays unchanged.
+The application is accessed directly through a browser. It can also be installed from supported
+browsers as a Progressive Web App.
 
 ## Diary format
 
@@ -217,25 +215,6 @@ npm run image:upload -- /path/to/photo.png "Image description"
 Supported extensions are `.avif`, `.gif`, `.jpeg`, `.jpg`, `.png`, `.svg`, and `.webp`. Because
 URLs use immutable caching, upload changed image content again and use the newly generated URL.
 
-## Android app
-
-The Android project is a lightweight wrapper around the hosted web application. It supports:
-
-- Trusted Web Activity when a compatible browser is available
-- WebView fallback when no compatible TWA browser is installed
-- Digital Asset Links verification
-- External release keystore storage
-- Signed APK and AAB builds
-
-Before building a fork, review the package name, production domain, manifest URLs, and signing
-configuration in `android/`.
-
-Detailed instructions:
-
-```text
-android/README.md
-```
-
 ## Security
 
 Production protections include:
@@ -248,7 +227,6 @@ Production protections include:
 - Read-only containers with dropped capabilities
 - Diary data stored outside the source tree
 - Restic encryption before backup upload
-- Android signing keys stored outside the repository
 
 See `SECURITY.md` for the threat model, residual risks, and incident-response checklist.
 
@@ -259,8 +237,6 @@ Never commit:
 - Diary Markdown files
 - `.env`
 - Passwords, hashes, session secrets, or backup credentials
-- Android keystores or password files
-- APK, AAB, or signing sidecar files
 - Restic repositories or restored diary data
 
 The included ignore rules cover these paths, but ignored files already present in Git history must

@@ -8,9 +8,8 @@
 - Cross-site mutation requests are rejected.
 - Diary paths are generated from validated server-side Shanghai dates.
 - Diary content is rendered as text, not HTML.
-- Application containers do not receive the source repository, `.env`, Git metadata, or Android key.
+- Application containers do not receive the source repository, `.env`, or Git metadata.
 - R2 backups are encrypted by Restic before leaving the server.
-- Android release keys live outside the repository and are created with `0600` permissions.
 
 ## Residual risks
 
@@ -20,8 +19,7 @@ The following risks should be evaluated for each deployment:
 2. An unlocked phone with an active 30-day session can open the diary.
 3. An unsaved draft is plaintext in that device's browser local storage until saved or logged out.
 4. Deployments without object lock allow stolen R2 write credentials to delete backups.
-5. Compromise of the Cloudflare account, DNS, TLS origin, or Android signing key can undermine the
-   TWA trust relationship.
+5. Compromise of the Cloudflare account, DNS, or TLS origin can redirect users or expose traffic.
 6. A global login limit can temporarily deny login after repeated malicious failures.
 7. Users with Docker daemon access can inspect backup container environment variables. Docker
    access must be treated as root access and restricted to trusted administrators.
@@ -38,7 +36,6 @@ The following risks should be evaluated for each deployment:
 - Bind the app to `127.0.0.1`; expose only HTTPS through the reverse proxy or named tunnel.
 - Do not use a Cloudflare Quick Tunnel for production.
 - Keep reverse-proxy access logs for no more than seven days and never log request bodies.
-- Back up the Android keystore separately from its password.
 - Run `npm test`, `npm audit --omit=dev`, backup check, and restore test before launch.
 
 ## Incident response
@@ -55,8 +52,3 @@ Compromised server:
 2. Rotate the login password, session secret, R2 token, SMTP password, and tunnel credentials.
 3. Restore onto a clean server from the most recent verified Restic snapshot.
 4. Inspect R2 snapshots for deletion and verify the configured object-lock policy.
-
-Lost Android signing key:
-
-- Existing APK installations cannot be upgraded with a differently signed APK.
-- If Google Play App Signing is enabled, follow the Play Console key recovery process.

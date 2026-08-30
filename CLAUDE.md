@@ -8,9 +8,6 @@ Markdown 文件中。应用不依赖 GitHub 托管，也不会自动 commit 或 
 正式部署使用 Cloudflare R2 保存 Restic 加密备份。云端不保存可直接阅读的 Markdown，
 备份密钥不得写入仓库。
 
-Android 客户端配置位于 `android/`。生产域名、包名和签名信息必须在发布前核对；
-签名密钥只能保存在仓库之外的安全位置。
-
 ## 日记格式规范
 
 - **文件路径**：`{YYYY}/{YYYYMMDD}.md`

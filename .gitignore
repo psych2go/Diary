@@ -1,16 +1,6 @@
 .claude/
-.android-signing/
 .env
 tmp/
 node_modules/
 npm-debug.log*
-*.keystore
-*.jks
-*.idsig
-android/.gradle/
-android/app/build/
-android/build/
-android/app-release-bundle.aab
-android/app-release-signed.apk
 [0-9][0-9][0-9][0-9]/*.md
-android/local.properties

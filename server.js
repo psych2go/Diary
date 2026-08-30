@@ -13,7 +13,6 @@ import {
   sessionCookie,
   verifySession
 } from "./src/auth.js";
-import { createAssetLinks, parseAndroidFingerprints } from "./src/asset-links.js";
 import { appendEntry, listEntries, readEntry } from "./src/diary-store.js";
 import { LoginLimiter, loginClientKey } from "./src/login-limiter.js";
 import { calculateStats, shanghaiTimestamp } from "./src/stats.js";
@@ -30,9 +29,6 @@ const sessionSecret =
   process.env.DIARY_SESSION_SECRET || (production ? "" : "local-development-session-secret");
 const secureCookie = process.env.DIARY_SECURE_COOKIE !== "false" && production;
 const trustProxy = process.env.DIARY_TRUST_PROXY === "true";
-const androidFingerprints = parseAndroidFingerprints(
-  process.env.ANDROID_SHA256_FINGERPRINTS
-);
 
 if (!passwordCredential) {
   throw new Error("DIARY_PASSWORD_HASH is required");
@@ -260,12 +256,6 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const url = new URL(request.url, "http://localhost");
-
-    if (request.method === "GET" && url.pathname === "/.well-known/assetlinks.json") {
-      response.setHeader("Cache-Control", "no-cache");
-      sendJson(response, 200, createAssetLinks(androidFingerprints));
-      return;
-    }
 
     if (url.pathname.startsWith("/api/")) {
       await handleApi(request, response, url);

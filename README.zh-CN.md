@@ -5,8 +5,7 @@
 MyDiary 是一个极简、自托管的 Markdown 日记应用，主要用于在手机上快速记录日记。
 它只保留一条核心流程：打开页面，通过语音输入或键盘输入正文，然后保存。
 
-本仓库只包含应用源码，不包含日记正文、生产环境配置、密码、备份凭据或 Android
-签名密钥。
+本仓库只包含应用源码，不包含日记正文、生产环境配置、密码或备份凭据。
 
 ## 功能
 
@@ -19,7 +18,6 @@ MyDiary 是一个极简、自托管的 Markdown 日记应用，主要用于在�
 - 30 天安全登录会话
 - 使用纯 Markdown 文件保存日记
 - 支持渐进式 Web 应用（PWA）
-- 可选 Android WebView/TWA 外壳
 - 可选 Restic 加密 Cloudflare R2 备份
 
 ## 项目结构
@@ -27,15 +25,13 @@ MyDiary 是一个极简、自托管的 Markdown 日记应用，主要用于在�
 | 目录或文件 | 用途 |
 | --- | --- |
 | `server.js` | HTTP 服务、身份验证、安全响应头和 API 路由 |
-| `src/` | 密码与会话、日记存储、统计和 Android Asset Links |
+| `src/` | 密码与会话、日记存储和统计 |
 | `public/` | 移动端网页、PWA 清单、图标和 Service Worker |
 | `backup/` | Restic 备份、保留策略、完整性检查和恢复测试 |
-| `android/` | Android 外壳、启动资源、签名工具和构建脚本 |
 | `deploy/` | 通用反向代理和证书续期配置模板 |
-| `test/` | 身份验证、存储、备份、Android 和服务器安全测试 |
+| `test/` | 身份验证、存储、备份和服务器安全测试 |
 
-网页应用是主要产品。大多数功能和界面更新只需要重新部署网页，通常不需要重新构建
-Android APK。
+应用直接通过浏览器访问，也可以通过支持的浏览器安装为渐进式 Web 应用（PWA）。
 
 ## 日记格式
 
@@ -215,24 +211,6 @@ npm run image:upload -- /path/to/photo.png "图片说明"
 支持 `.avif`、`.gif`、`.jpeg`、`.jpg`、`.png`、`.svg` 和 `.webp`。由于 URL 使用
 长期不可变缓存，修改图片内容时应重新上传并使用命令生成的新 URL。
 
-## Android 应用
-
-Android 工程是托管网页应用的轻量外壳，支持：
-
-- 存在兼容浏览器时使用 Trusted Web Activity
-- 没有兼容 TWA 浏览器时使用 WebView
-- Digital Asset Links 域名验证
-- 在源码仓库之外保存发布签名密钥
-- 构建已签名的 APK 和 AAB
-
-构建自己的版本之前，需要检查 `android/` 中的包名、生产域名、清单地址和签名配置。
-
-详细说明：
-
-```text
-android/README.md
-```
-
 ## 安全设计
 
 生产环境包含以下保护：
@@ -245,7 +223,6 @@ android/README.md
 - 容器使用只读文件系统并移除不需要的权限
 - 日记数据保存在源码目录之外
 - 上传备份前由 Restic 加密
-- Android 签名密钥保存在源码仓库之外
 
 威胁模型、残余风险和安全事件处理清单请参阅 `SECURITY.md`。
 
@@ -256,8 +233,6 @@ android/README.md
 - 日记 Markdown 文件
 - `.env`
 - 密码、密码哈希、会话密钥或备份凭据
-- Android keystore 或密码文件
-- APK、AAB 或签名附属文件
 - Restic 仓库或恢复出的日记数据
 
 仓库中的忽略规则会覆盖这些路径。但如果敏感文件已经进入 Git 历史，仅添加忽略规则
