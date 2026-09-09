@@ -95,6 +95,48 @@ test("production server rejects cross-site writes and sets hardened cookies", as
   assert.match(login.headers.get("set-cookie"), /__Host-diary_session=/);
   assert.match(login.headers.get("set-cookie"), /Secure/);
 
+  const cookie = login.headers.getSetCookie()[0].split(";")[0];
+  for (const body of ["null", "[]", "123", '"text"', '{"password":123}', '{"password":']) {
+    const invalid = await fetch(`${origin}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    });
+    assert.equal(invalid.status, 400, body);
+  }
+  for (const text of [null, 123, {}, [], true]) {
+    const invalid = await fetch(`${origin}/api/entries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ text })
+    });
+    assert.equal(invalid.status, 400);
+  }
+  assert.deepEqual(await fs.readdir(root), []);
+  const invalidDate = await fetch(`${origin}/api/entries/%FF`, {
+    headers: { Cookie: cookie }
+  });
+  assert.equal(invalidDate.status, 400);
+
+  const payload = { text: "接口防重复测试", requestId: "671fd221-81b6-42bc-95e6-37d3a58eabaf" };
+  const savedResults = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const saved = await fetch(`${origin}/api/entries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(saved.status, 201);
+    savedResults.push(await saved.json());
+  }
+  assert.deepEqual(savedResults[0], savedResults[1]);
+  const savedEntry = await fetch(`${origin}/api/entries/${savedResults[0].date}`, {
+    headers: { Cookie: cookie }
+  });
+  const { content } = await savedEntry.json();
+  assert.equal(content.split(payload.text).length - 1, 1);
+  assert.doesNotMatch(content, /diary-entry:/);
+
   const home = await fetch(origin);
   assert.equal(home.headers.get("strict-transport-security"), "max-age=31536000");
   assert.equal(home.headers.get("cross-origin-opener-policy"), "same-origin");

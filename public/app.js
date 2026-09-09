@@ -1,3 +1,61 @@
+// Keep the current tab usable even when browser storage is unavailable.
+const memoryStorage = new Map();
+let storageUnavailable = false;
+const localStorage = {
+  getItem(key) {
+    if (storageUnavailable && memoryStorage.has(key)) return memoryStorage.get(key);
+    try {
+      return globalThis.localStorage.getItem(key);
+    } catch {
+      storageUnavailable = true;
+      return memoryStorage.get(key) ?? null;
+    }
+  },
+  setItem(key, value) {
+    memoryStorage.set(key, String(value));
+    try {
+      globalThis.localStorage.setItem(key, value);
+    } catch {
+      storageUnavailable = true;
+    }
+  },
+  keys() {
+    const keys = new Set(memoryStorage.keys());
+    try {
+      const storage = globalThis.localStorage;
+      for (let index = 0; index < storage.length; index += 1) {
+        keys.add(storage.key(index));
+      }
+    } catch {
+      storageUnavailable = true;
+    }
+    return [...keys].filter((key) => typeof key === "string" && this.getItem(key) !== null);
+  },
+  removeItem(key) {
+    memoryStorage.set(key, null);
+    try {
+      globalThis.localStorage.removeItem(key);
+      return true;
+    } catch {
+      storageUnavailable = true;
+      return false;
+    }
+  }
+};
+const draftStatus = () => storageUnavailable
+  ? "草稿仅保留在当前页面，关闭页面可能丢失；仍可提交保存"
+  : "草稿已保留";
+const PENDING_SAVE_KEY = "diary-pending-save";
+
+// An older cached HTML shell may briefly run the refreshed script during a PWA update.
+const draftSelect = document.querySelector("#draft-select") || document.createElement("select");
+const refreshDrafts = document.querySelector("#refresh-drafts") || document.createElement("button");
+const restoreDraft = document.querySelector("#restore-draft") || document.createElement("button");
+const clearDrafts = document.querySelector("#clear-drafts") || document.createElement("button");
+const draftMessage = document.querySelector("#draft-message") || document.createElement("p");
+let activeDraftKey = null;
+let loginPending = false;
+
 const loginView = document.querySelector("#login-view");
 const diaryView = document.querySelector("#diary-view");
 const loginForm = document.querySelector("#login-form");
@@ -85,11 +143,11 @@ function localDateParts(now = new Date()) {
 }
 
 function draftKey() {
-  return `diary-draft:${localDateParts().date}`;
+  return activeDraftKey ||= `diary-draft:${localDateParts().date}`;
 }
 
 async function api(path, options = {}) {
-  const { timeoutMs = 0, ...fetchOptions } = options;
+  const { timeoutMs = SESSION_TIMEOUT_MS, ...fetchOptions } = options;
   const controller = timeoutMs ? new AbortController() : null;
   const timeout = controller
     ? setTimeout(() => controller.abort(), timeoutMs)
@@ -152,6 +210,9 @@ function setDiaryInteractive(interactive) {
   entryInput.disabled = !interactive;
   saveButton.disabled = !interactive;
   historyButton.disabled = !interactive;
+  refreshDrafts.disabled = !interactive;
+  restoreDraft.disabled = !interactive;
+  clearDrafts.disabled = !interactive;
   diaryView.setAttribute("aria-busy", String(!interactive));
 }
 
@@ -163,6 +224,8 @@ function clearPrivateViews() {
   dateList.replaceChildren();
   entryReader.replaceChildren();
   calendarGrid.replaceChildren();
+  draftSelect.replaceChildren();
+  draftMessage.textContent = "";
   stats = null;
   visibleMonth = null;
   monthDays.textContent = "0";
@@ -215,6 +278,7 @@ function lockDiary({ removeDraft = false } = {}) {
   localStorage.removeItem(AUTH_FLAG_KEY);
   if (removeDraft) {
     localStorage.removeItem(draftKey());
+    localStorage.removeItem(PENDING_SAVE_KEY);
   }
   showLogin();
 }
@@ -233,14 +297,73 @@ function showDiary(focus = false) {
   loginView.hidden = true;
   diaryView.hidden = false;
   updateDiaryHeader();
+  activeDraftKey = `diary-draft:${localDateParts().date}`;
   entryInput.value = localStorage.getItem(draftKey()) || "";
+  listDrafts();
   setRecordingState(Boolean(entryInput.value.trim()));
   setDiaryInteractive(true);
-  saveState.textContent = entryInput.value.trim() ? "草稿已保留" : "";
+  saveState.textContent = entryInput.value.trim() ? draftStatus() : "";
   if (focus) {
     entryInput.focus();
   }
 }
+
+function listDrafts() {
+  draftSelect.replaceChildren();
+  const keys = localStorage.keys()
+    .filter((key) => /^diary-draft:\d{4}-\d{2}-\d{2}$/.test(key) && localStorage.getItem(key)?.trim())
+    .sort().reverse();
+  for (const key of keys) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = key.slice("diary-draft:".length);
+    draftSelect.append(option);
+  }
+  draftMessage.textContent = storageUnavailable
+    ? "无法完整读取本机草稿，请勿关闭页面。"
+    : `本机有 ${keys.length} 份草稿；草稿为明文，恢复后需点击保存才会写入日记。`;
+}
+
+refreshDrafts.addEventListener("click", () => {
+  if (diaryInteractive && !isSaving) listDrafts();
+});
+restoreDraft.addEventListener("click", () => {
+  if (!diaryInteractive || isSaving) return;
+  const key = draftSelect.value;
+  if (!/^diary-draft:\d{4}-\d{2}-\d{2}$/.test(key)) return;
+  const text = localStorage.getItem(key);
+  if (!text) return;
+  if (entryInput.value && key !== draftKey()) {
+    localStorage.setItem(draftKey(), entryInput.value);
+    if (storageUnavailable) {
+      draftMessage.textContent = "当前草稿无法可靠保存，请先提交或复制正文，再恢复旧草稿。";
+      return;
+    }
+  }
+  activeDraftKey = key;
+  entryInput.value = text;
+  setRecordingState(Boolean(text.trim()));
+  saveState.textContent = `已恢复 ${key.slice("diary-draft:".length)} 的草稿；将按服务器保存时间记录`;
+  entryInput.focus();
+});
+clearDrafts.addEventListener("click", () => {
+  if (!diaryInteractive || isSaving) return;
+  if (!window.confirm("清除全部本机草稿和待确认保存信息？不会删除服务器日记。此操作不可撤销。")) return;
+  let cleared = true;
+  for (const key of localStorage.keys()) {
+    if (key.startsWith("diary-draft:") || key === PENDING_SAVE_KEY) {
+      if (!localStorage.removeItem(key)) cleared = false;
+    }
+  }
+  entryInput.value = "";
+  activeDraftKey = null;
+  setRecordingState(false);
+  listDrafts();
+  saveState.textContent = "";
+  draftMessage.textContent = cleared && !storageUnavailable
+    ? "已清除全部本机草稿，服务器日记不受影响。"
+    : "已清除当前页面草稿，但无法确认浏览器存储已清除；请在浏览器设置中清除此站点数据。";
+});
 
 function setRecordingState(recording) {
   isRecording = recording;
@@ -252,17 +375,21 @@ function setRecordingState(recording) {
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (loginPending) return;
+  loginPending = true;
   loginError.textContent = "";
+  const generation = ++authGeneration;
 
   try {
-    authGeneration += 1;
     if (localStorage.getItem(LOGOUT_PENDING_KEY) === "1") {
-      await retryPendingLogout();
+      if (!await retryPendingLogout()) throw new Error("退出尚未完成，请联网后重试");
     }
+    if (generation !== authGeneration) return;
     await api("/api/login", {
       method: "POST",
       body: JSON.stringify({ password: passwordInput.value })
     });
+    if (generation !== authGeneration) return;
     passwordInput.value = "";
     authGeneration += 1;
     clearSessionRetry();
@@ -270,8 +397,12 @@ loginForm.addEventListener("submit", async (event) => {
     localStorage.setItem(AUTH_FLAG_KEY, "1");
     showDiary(true);
   } catch (error) {
-    loginError.textContent = error.message;
-    passwordInput.select();
+    if (generation === authGeneration) {
+      loginError.textContent = error.message;
+      passwordInput.select();
+    }
+  } finally {
+    loginPending = false;
   }
 });
 
@@ -280,7 +411,7 @@ entryInput.addEventListener("input", () => {
   localStorage.setItem(draftKey(), value);
   if (value.trim()) {
     setRecordingState(true);
-    saveState.textContent = "草稿已保留";
+    saveState.textContent = draftStatus();
   } else if (!isSaving) {
     saveState.textContent = isRecording ? "正在记录" : "";
   }
@@ -294,7 +425,7 @@ entryInput.addEventListener("focus", () => {
 });
 
 async function saveEntry() {
-  if (!diaryInteractive) {
+  if (!diaryInteractive || isSaving) {
     return;
   }
 
@@ -307,6 +438,16 @@ async function saveEntry() {
     return;
   }
 
+  let pending;
+  try {
+    pending = JSON.parse(localStorage.getItem(PENDING_SAVE_KEY));
+  } catch {
+    // Ignore corrupt browser metadata, never the user's draft.
+  }
+  if (!pending || pending.text !== text || typeof pending.requestId !== "string") {
+    pending = { text, requestId: crypto.randomUUID() };
+  }
+  localStorage.setItem(PENDING_SAVE_KEY, JSON.stringify(pending));
   const generation = authGeneration;
   const operation = ++saveOperation;
   const submittedDraftKey = draftKey();
@@ -318,7 +459,8 @@ async function saveEntry() {
   try {
     const saved = await api("/api/entries", {
       method: "POST",
-      body: JSON.stringify({ text })
+      body: JSON.stringify(pending),
+      timeoutMs: 20_000
     });
     if (
       generation !== authGeneration ||
@@ -326,12 +468,15 @@ async function saveEntry() {
     ) {
       return;
     }
+    localStorage.removeItem(PENDING_SAVE_KEY);
     const draftUnchanged =
       entryInput.value === submittedValue &&
       localStorage.getItem(submittedDraftKey) === submittedValue;
     if (draftUnchanged) {
       entryInput.value = "";
       localStorage.removeItem(submittedDraftKey);
+      activeDraftKey = null;
+      listDrafts();
       setRecordingState(false);
     }
     saveState.textContent = draftUnchanged
@@ -341,7 +486,7 @@ async function saveEntry() {
     entryInput.blur();
   } catch (error) {
     if (operation === saveOperation && error.status !== 401) {
-      saveState.textContent = error.message;
+      saveState.textContent = `${error.message}；保存结果未确认，草稿仍保留，重试不会重复记录`;
     }
   } finally {
     if (operation === saveOperation) {
@@ -518,15 +663,15 @@ async function openStats() {
   switchHistoryView("stats");
 
   try {
-    stats = await api("/api/stats");
+    const nextStats = await api("/api/stats");
     if (
       generation !== authGeneration ||
       requestGeneration !== historyGeneration ||
       !historyDialog.open
     ) {
-      stats = null;
       return;
     }
+    stats = nextStats;
     const [year, month] = localDateParts().date.split("-").map(Number);
     visibleMonth ||= new Date(Date.UTC(year, month - 1, 1));
     currentStreak.textContent = String(stats.currentStreak);

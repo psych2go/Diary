@@ -1,5 +1,31 @@
 import crypto from "node:crypto";
 
+import { promisify } from "node:util";
+
+const scryptAsync = promisify(crypto.scrypt);
+
+// No unbounded queue: leave thread-pool capacity for file operations.
+export function createPasswordVerifier({ maxConcurrent = 2 } = {}) {
+  let active = 0;
+  return async function verify(candidate, expected) {
+    if (active >= maxConcurrent) {
+      const error = new Error("Password verification is busy");
+      error.code = "AUTH_BUSY";
+      throw error;
+    }
+    active += 1;
+    try {
+      if (!isPasswordHash(expected)) return safeEqual(candidate, expected);
+      const [, salt, digest] = expected.split("$");
+      const actual = await scryptAsync(candidate, Buffer.from(salt, "base64url"),
+        SCRYPT_KEY_LENGTH, SCRYPT_OPTIONS);
+      return safeEqual(actual, Buffer.from(digest, "base64url"));
+    } finally {
+      active -= 1;
+    }
+  };
+}
+
 const SESSION_AGE_SECONDS = 60 * 60 * 24 * 30;
 const SCRYPT_KEY_LENGTH = 64;
 const SCRYPT_OPTIONS = {

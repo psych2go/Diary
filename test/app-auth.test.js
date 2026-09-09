@@ -56,6 +56,11 @@ function jsonResponse(value, status = 200) {
 
 test("authentication races and expired sessions lock private views", async () => {
   const selectors = [
+    "#draft-select",
+    "#refresh-drafts",
+    "#restore-draft",
+    "#clear-drafts",
+    "#draft-message",
     "#login-view",
     "#diary-view",
     "#login-form",
@@ -90,6 +95,7 @@ test("authentication races and expired sessions lock private views", async () =>
   const originalGlobals = new Map();
   const documentListeners = new Map();
   const windowListeners = new Map();
+  let confirmClear = false;
   let resolveSession;
   let sessionRequested = false;
   let fetchImpl = (path) => {
@@ -120,6 +126,8 @@ test("authentication races and expired sessions lock private views", async () =>
       return fetchImpl(path, options);
     },
     localStorage: {
+      get length() { return storage.size; },
+      key(index) { return [...storage.keys()][index] ?? null; },
       getItem(key) {
         return storage.get(key) ?? null;
       },
@@ -135,6 +143,7 @@ test("authentication races and expired sessions lock private views", async () =>
       vibrate() {}
     },
     window: {
+      confirm() { return confirmClear; },
       addEventListener(name, handler) {
         windowListeners.set(name, handler);
       }
@@ -190,6 +199,78 @@ test("authentication races and expired sessions lock private views", async () =>
     const draftKey = [...storage.keys()].find((key) => key.startsWith("diary-draft:"));
     assert.equal(elements.get("#entry").value, "newer draft");
     assert.equal(storage.get(draftKey), "newer draft");
+
+    // A lost response must keep the same ID for an unchanged retry.
+    const submittedBodies = [];
+    fetchImpl = (_path, options) => {
+      submittedBodies.push(JSON.parse(options.body));
+      if (submittedBodies.length === 1) throw new Error("Connection lost");
+      return Promise.resolve(jsonResponse({ time: "12:01" }, 201));
+    };
+    await elements.get("#save-button").listeners.get("click")();
+    assert.equal(elements.get("#entry").value, "newer draft");
+    assert.match(elements.get("#save-state").textContent, /保存结果未确认/);
+    await elements.get("#save-button").listeners.get("click")();
+    assert.equal(submittedBodies.length, 2);
+    assert.equal(submittedBodies[0].requestId, submittedBodies[1].requestId);
+    assert.equal(elements.get("#entry").value, "");
+    assert.equal(storage.has("diary-pending-save"), false);
+
+    // An old stats response must neither replace nor clear the latest state.
+    const statsResolvers = [];
+    fetchImpl = () => new Promise((resolve) => statsResolvers.push(resolve));
+    elements.get("#history-dialog").open = true;
+    const oldStats = elements.get("#stats-view-button").listeners.get("click")();
+    const newStats = elements.get("#stats-view-button").listeners.get("click")();
+    statsResolvers[1](jsonResponse({ dates: [], currentStreak: 9, longestStreak: 10 }));
+    await newStats;
+    statsResolvers[0](jsonResponse({ dates: [], currentStreak: 1, longestStreak: 2 }));
+    await oldStats;
+    assert.equal(elements.get("#current-streak").textContent, "9");
+    const displayedMonth = elements.get("#calendar-month").textContent;
+    elements.get("#next-month").listeners.get("click")();
+    assert.notEqual(elements.get("#calendar-month").textContent, displayedMonth);
+
+    // Old drafts are restored only on request, without overwriting today's draft.
+    const oldDraftKey = "diary-draft:2020-01-02";
+    storage.set(oldDraftKey, "旧草稿");
+    storage.set("unrelated-setting", "keep");
+    elements.get("#entry").value = "今日未保存的草稿";
+    elements.get("#entry").listeners.get("input")();
+    elements.get("#refresh-drafts").listeners.get("click")();
+    elements.get("#draft-select").value = oldDraftKey;
+    elements.get("#restore-draft").listeners.get("click")();
+    assert.equal(elements.get("#entry").value, "旧草稿");
+    assert.equal(storage.get(draftKey), "今日未保存的草稿");
+    elements.get("#entry").value = "修改后的旧草稿";
+    elements.get("#entry").listeners.get("input")();
+    assert.equal(storage.get(oldDraftKey), "修改后的旧草稿");
+    elements.get("#clear-drafts").listeners.get("click")();
+    assert.equal(storage.get(oldDraftKey), "修改后的旧草稿");
+    confirmClear = true;
+    storage.set("diary-pending-save", "{}");
+    elements.get("#clear-drafts").listeners.get("click")();
+    assert.equal(storage.has(oldDraftKey), false);
+    assert.equal(storage.has(draftKey), false);
+    assert.equal(storage.has("diary-pending-save"), false);
+    assert.equal(storage.get("unrelated-setting"), "keep");
+    assert.equal(storage.get("diary-authenticated"), "1");
+    assert.equal(elements.get("#entry").value, "");
+
+    fetchImpl = (_path, options) => {
+      submittedBodies.push(JSON.parse(options.body));
+      return Promise.resolve(jsonResponse({ time: "12:02" }, 201));
+    };
+    // Quota errors must not prevent editing or saving to the server.
+    const originalSetItem = globals.localStorage.setItem;
+    globals.localStorage.setItem = () => { throw new Error("Quota exceeded"); };
+    elements.get("#entry").value = "草稿存储不可用时仍可保存";
+    elements.get("#entry").listeners.get("input")();
+    assert.match(elements.get("#save-state").textContent, /仅保留在当前页面/);
+    await elements.get("#save-button").listeners.get("click")();
+    assert.equal(elements.get("#entry").value, "");
+    assert.equal(submittedBodies.at(-1).text, "草稿存储不可用时仍可保存");
+    globals.localStorage.setItem = originalSetItem;
 
     elements.get("#history-dialog").open = true;
     elements.get("#entry-reader").textContent = "private diary content";

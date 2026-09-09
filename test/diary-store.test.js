@@ -36,6 +36,29 @@ test("creates and appends Markdown entries without rewriting text", async (conte
   assert.deepEqual(await listEntries(root), ["2026-08-09"]);
 });
 
+test("lists only real dates in their matching year and supports a new data directory", async (context) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "my-diary-"));
+  context.after(() => fs.rm(root, { recursive: true, force: true }));
+  assert.deepEqual(await listEntries(path.join(root, "not-created")), []);
+  await fs.mkdir(path.join(root, "2026"));
+  for (const name of ["20260230.md", "20250809.md", "20260809.md", "20261301.md"]) {
+    await fs.writeFile(path.join(root, "2026", name), "");
+  }
+  assert.deepEqual(await listEntries(root), ["2026-08-09"]);
+});
+
+test("rejects non-string text before creating files", async (context) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "my-diary-"));
+  context.after(() => fs.rm(root, { recursive: true, force: true }));
+  for (const text of [null, undefined, 123, {}, []]) {
+    await assert.rejects(
+      appendEntry(root, { date: "2026-08-09", time: "10:10", text }),
+      /Invalid diary text/
+    );
+  }
+  assert.deepEqual(await fs.readdir(root), []);
+});
+
 test("serializes concurrent writes to the same day", async (context) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "my-diary-"));
   context.after(() => fs.rm(root, { recursive: true, force: true }));

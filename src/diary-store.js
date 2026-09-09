@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
+import { atomicWrite, syncDirectory } from "./atomic-write.js";
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -34,9 +36,18 @@ function pathForDate(root, date) {
   return path.join(root, date.slice(0, 4), `${compactDate}.md`);
 }
 
-export async function appendEntry(root, { date, time, text }) {
+export async function appendEntry(root, { date, time, text, requestId }) {
+  root = path.resolve(root);
+  if (requestId !== undefined &&
+      (typeof requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId))) {
+    throw new Error("Invalid diary request ID");
+  }
   if (!validateDate(date) || !validateTime(time)) {
     throw new Error("Invalid diary timestamp");
+  }
+
+  if (typeof text !== "string") {
+    throw new Error("Invalid diary text");
   }
 
   const cleanText = text.replace(/\r\n/g, "\n").trim();
@@ -45,9 +56,23 @@ export async function appendEntry(root, { date, time, text }) {
   }
 
   const filePath = pathForDate(root, date);
-  const previousWrite = writeQueues.get(filePath) || Promise.resolve();
+  const digest = crypto.createHash("sha256").update(cleanText).digest("hex");
+  // Serialize all dates so a retry spanning midnight cannot append twice.
+  const previousWrite = writeQueues.get(root) || Promise.resolve();
   const currentWrite = previousWrite.catch(() => {}).then(async () => {
+    if (requestId) {
+      for (const recordedDate of await listEntries(root, Infinity)) {
+        const { content } = await readEntry(root, recordedDate);
+        const match = content.match(new RegExp(`^<!-- diary-entry:${requestId}:([a-f0-9]{64}):([0-9:]{5}) -->$`, "m"));
+        if (match) {
+          if (match[1] !== digest) throw new Error("Invalid diary request ID reuse");
+          await syncDirectory(path.dirname(pathForDate(root, recordedDate)));
+          return { date: recordedDate, time: match[2] };
+        }
+      }
+    }
     await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await syncDirectory(root);
 
     let existing = "";
     try {
@@ -59,21 +84,19 @@ export async function appendEntry(root, { date, time, text }) {
     }
 
     const prefix = existing.trimEnd() || `# ${date}`;
-    const nextContent = `${prefix}\n\n## ${time}\n\n${cleanText}\n`;
-    const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-
-    await fs.writeFile(temporaryPath, nextContent, { encoding: "utf8", mode: 0o600 });
-    await fs.rename(temporaryPath, filePath);
+    const marker = requestId ? `\n<!-- diary-entry:${requestId}:${digest}:${time} -->\n` : "";
+    const nextContent = `${prefix}\n\n## ${time}\n\n${cleanText}\n${marker}`;
+    await atomicWrite(filePath, nextContent);
+    return { date, time };
   });
 
-  writeQueues.set(filePath, currentWrite);
+  writeQueues.set(root, currentWrite);
 
   try {
-    await currentWrite;
-    return { date, time };
+    return await currentWrite;
   } finally {
-    if (writeQueues.get(filePath) === currentWrite) {
-      writeQueues.delete(filePath);
+    if (writeQueues.get(root) === currentWrite) {
+      writeQueues.delete(root);
     }
   }
 }
@@ -93,7 +116,13 @@ export async function readEntry(root, date) {
 }
 
 export async function listEntries(root, limit = 60) {
-  const rootEntries = await fs.readdir(root, { withFileTypes: true });
+  let rootEntries;
+  try {
+    rootEntries = await fs.readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
   const years = rootEntries
     .filter((entry) => entry.isDirectory() && /^\d{4}$/.test(entry.name))
     .map((entry) => entry.name)
@@ -107,7 +136,10 @@ export async function listEntries(root, limit = 60) {
     for (const file of files) {
       if (file.isFile() && FILE_PATTERN.test(file.name)) {
         const compact = file.name.slice(0, 8);
-        dates.push(`${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`);
+        const date = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+        if (compact.startsWith(year) && validateDate(date)) {
+          dates.push(date);
+        }
       }
     }
   }

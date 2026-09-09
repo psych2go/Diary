@@ -78,6 +78,15 @@
             <p class="save-state" id="save-state" aria-live="polite"></p>
           </div>
         </form>
+        <details class="draft-tools">
+          <summary>本机草稿管理</summary>
+          <p id="draft-message" role="status"></p>
+          <label for="draft-select">草稿日期</label>
+          <select id="draft-select"></select>
+          <button id="refresh-drafts" type="button">刷新列表</button>
+          <button id="restore-draft" type="button">恢复草稿</button>
+          <button id="clear-drafts" type="button">清除全部本机草稿</button>
+        </details>
       </section>
     </main>
 

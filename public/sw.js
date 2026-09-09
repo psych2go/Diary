@@ -1,4 +1,4 @@
-const CACHE = "my-diary-v10";
+const CACHE = "my-diary-v11";
 const APP_SHELL = [
   "/",
   "/styles.css",

@@ -29,6 +29,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   letter-spacing: 0;
@@ -58,6 +59,29 @@ button {
   width: min(100%, 760px);
   min-height: 100svh;
   margin: 0 auto;
+}
+
+.draft-tools {
+  margin: 16px 24px 32px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.draft-tools summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+
+.draft-tools button,
+.draft-tools select {
+  min-height: 44px;
+  max-width: 100%;
+  margin: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .login-view {

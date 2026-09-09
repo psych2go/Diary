@@ -104,7 +104,7 @@ function response(name, { ok = true, type = "basic" } = {}) {
 
 test("service worker serves cached shell immediately and completes background refresh", async () => {
   const harness = createHarness();
-  const cache = await harness.caches.open("my-diary-v10");
+  const cache = await harness.caches.open("my-diary-v11");
   const request = {
     method: "GET",
     url: "https://diary.zhuying.fun/app.js"
@@ -130,7 +130,7 @@ test("service worker serves cached shell immediately and completes background re
 
 test("service worker does not replace healthy cache with an error response", async () => {
   const harness = createHarness();
-  const cache = await harness.caches.open("my-diary-v10");
+  const cache = await harness.caches.open("my-diary-v11");
   const request = {
     method: "GET",
     url: "https://diary.zhuying.fun/styles.css"

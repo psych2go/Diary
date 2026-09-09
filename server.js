@@ -8,7 +8,7 @@ import {
   clearLegacySessionCookie,
   createSession,
   isPasswordHash,
-  passwordMatches,
+  createPasswordVerifier,
   readCookie,
   sessionCookie,
   verifySession
@@ -48,6 +48,7 @@ const sessionSigningSecret = crypto
   .digest("hex");
 
 const loginLimiter = new LoginLimiter();
+const verifyPassword = createPasswordVerifier();
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -104,7 +105,11 @@ async function readJson(request, maximumBytes = 512 * 1024) {
     chunks.push(chunk);
   }
 
-  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new SyntaxError("Request body must be a JSON object");
+  }
+  return body;
 }
 
 function isAuthenticated(request) {
@@ -153,7 +158,10 @@ async function handleApi(request, response, url) {
     }
 
     const body = await readJson(request, 16 * 1024);
-    if (!passwordMatches(String(body.password || ""), passwordCredential)) {
+    if (typeof body.password !== "string") {
+      throw new SyntaxError("Password must be a string");
+    }
+    if (!await verifyPassword(body.password, passwordCredential)) {
       loginLimiter.recordFailure(clientKey);
       return sendJson(response, 401, { error: "密码不正确" });
     }
@@ -198,15 +206,20 @@ async function handleApi(request, response, url) {
   if (request.method === "GET" && url.pathname.startsWith("/api/entries/")) {
     const date = decodeURIComponent(url.pathname.slice("/api/entries/".length));
     const entry = await readEntry(diaryRoot, date);
+    entry.content = entry.content.replace(/^<!-- diary-entry:[0-9a-f-]{36}:[0-9a-f]{64}:[0-9:]{5} -->\n?/gm, "");
     return sendJson(response, 200, entry);
   }
 
   if (request.method === "POST" && url.pathname === "/api/entries") {
     const body = await readJson(request);
+    if (typeof body.text !== "string") {
+      throw new SyntaxError("Diary text must be a string");
+    }
     const timestamp = shanghaiTimestamp();
     const result = await appendEntry(diaryRoot, {
       ...timestamp,
-      text: String(body.text || "")
+      text: body.text,
+      requestId: body.requestId
     });
     return sendJson(response, 201, result);
   }
@@ -269,12 +282,18 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("Not found");
   } catch (error) {
+    if (error.code === "AUTH_BUSY") {
+      response.setHeader("Retry-After", "1");
+      return sendJson(response, 503, { error: "登录服务繁忙，请稍后重试" });
+    }
     const expected =
       error instanceof SyntaxError ||
+      error instanceof URIError ||
       error.message.startsWith("Invalid diary") ||
       error.message === "Diary entry is empty" ||
       error.message === "Request body is too large";
-    console.error(error);
+    // JSON parsing errors can contain submitted passwords or diary text.
+    if (!expected) console.error(error);
     sendJson(response, expected ? 400 : 500, {
       error: expected ? "提交的内容无效" : "服务器暂时无法处理"
     });
